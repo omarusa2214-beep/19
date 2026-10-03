@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>مدمر الشاشة - 50 سلاح</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* يمنع تحريك الشاشة (Scroll) أثناء اللعب على الموبايل */
+        }
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden; /* يمنع ظهور أي أشرطة تمرير */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* هذا هو الحاوية الرئيسية التي ستأخذ حجم الشاشة بالكامل */
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            /* خلفية ويندوز الافتراضية */
+            background-image: linear-gradient(to bottom, #2989cc 0%, #d8e5f9 60%, #7db91f 60%, #468c00 100%);
+            /* السر هنا: cover تجعل الصورة تملأ الشاشة بالكامل بدون حواف سوداء */
+            background-size: cover !important; 
+            background-position: center !important;
+            background-repeat: no-repeat !important;
+            overflow: hidden;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            /* عرض الكانفاس 100% من الشاشة */
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        #damage-canvas { z-index: 10; }
+        #fx-canvas { z-index: 15; pointer-events: none; }
+
+        /* زر إخفاء وإظهار الترسانة */
+        #toggle-toolbar-btn {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            z-index: 10000000;
+            background: #0058e6;
+            color: white;
+            border: 2px solid #fff;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: all 0.2s;
+        }
+
+        #toggle-toolbar-btn:active {
+            transform: scale(0.95);
+            background: #003a99;
+        }
+
+        /* لوحة الأسلحة */
+        #toolbar {
+            position: fixed;
+            top: 70px;
+            left: 20px;
+            width: 320px;
+            max-width: 90vw; /* لحماية العرض على شاشات الموبايل الصغيرة */
+            background-color: #ece9d8; 
+            border: 2px solid #0054e3;
+            border-radius: 8px 8px 0 0;
+            z-index: 999999;
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            transition: opacity 0.3s;
+        }
+
+        #toolbar-header {
+            background: linear-gradient(to right, #0058e6 0%, #3a93ff 100%);
+            color: white;
+            padding: 10px;
+            font-weight: bold;
+            font-size: 15px;
+            border-radius: 6px 6px 0 0;
+            cursor: move;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #toolbar-content {
+            padding: 10px;
+            background: #ece9d8;
+        }
+
+        /* شبكة عرض الـ 50 سلاح */
+        #weapons-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 5px;
+            max-height: 45vh; /* نصف الشاشة تقريباً للموبايل */
+            overflow-y: auto;
+            padding-right: 5px;
+            margin-bottom: 10px;
+            border: 1px inset #808080;
+            background: #fff;
+            padding: 5px;
+        }
+
+        #weapons-grid::-webkit-scrollbar { width: 8px; }
+        #weapons-grid::-webkit-scrollbar-track { background: #f1f1f1; border-left: 1px solid #ccc; }
+        #weapons-grid::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+
+        .weapon-btn {
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            padding: 8px 5px;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.1s;
+            color: #333;
+            font-weight: bold;
+            text-align: right;
+        }
+
+        .weapon-btn:hover { background: #e0e0e0; }
+        
+        .weapon-btn.active {
+            background: #cce8ff;
+            border-color: #99d1ff;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+        }
+
+        .action-btn {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            background: #e1e1e1;
+            border: 1px solid #888;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #333;
+            font-size: 14px;
+        }
+        
+        .action-btn:active { background: #ccc; }
+        
+        #file-input { display: none; }
+
+        #toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 1000000;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="toggle-toolbar-btn">👁️ إخفاء/إظهار الترسانة</button>
+
+    <div id="game-container">
+        <!-- الكانفاس سيأخذ حجم الشاشة الكاملة برمجياً -->
+        <canvas id="damage-canvas"></canvas>
+        <canvas id="fx-canvas"></canvas>
+    </div>
+
+    <div id="toolbar">
+        <div id="toolbar-header">
+            <span>🛠️ ترسانة الأسلحة (50)</span>
+            <span style="font-size:11px; color:#ddd; cursor:move;">(اسحبني)</span>
+        </div>
+        <div id="toolbar-content">
+            <div id="weapons-grid">
+                <!-- سيتم حقن الأسلحة هنا -->
+            </div>
+            
+            <input type="file" id="file-input" accept="image/*">
+            <button class="action-btn" id="btn-bg">🖼️️ تغيير صورة الخلفية</button>
+            <button class="action-btn" id="btn-clear" style="color: darkred;">🗑️ تنظيف الشاشة بالكامل</button>
+        </div>
+    </div>
+
+    <div id="toast">تم اختيار السلاح</div>
+
+    <script>
+        const gameContainer = document.getElementById('game-container');
+        const damageCanvas = document.getElementById('damage-canvas');
+        const fxCanvas = document.getElementById('fx-canvas');
+        const damageCtx = damageCanvas.getContext('2d', { willReadFrequently: true });
+        const fxCtx = fxCanvas.getContext('2d');
+        
+        let GAME_WIDTH = window.innerWidth;
+        let GAME_HEIGHT = window.innerHeight;
+
+        // دالة لضبط حجم الكانفاس ليطابق الشاشة تماماً بدون حواف سوداء
+        function resizeCanvas() {
+            // حفظ الرسم القديم قبل تغيير الحجم حتى لا يختفي عند تدوير الموبايل
+            let tempCanvas = document.createElement('canvas');
+            let tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = damageCanvas.width || window.innerWidth;
+            tempCanvas.height = damageCanvas.height || window.innerHeight;
+            if(damageCanvas.width > 0 && damageCanvas.height > 0) {
+                tempCtx.drawImage(damageCanvas, 0, 0);
+            }
+
+            GAME_WIDTH = window.innerWidth;
+            GAME_HEIGHT = window.innerHeight;
+            
+            damageCanvas.width = GAME_WIDTH;
+            damageCanvas.height = GAME_HEIGHT;
+            fxCanvas.width = GAME_WIDTH;
+            fxCanvas.height = GAME_HEIGHT;
+
+            // استعادة الرسم
+            damageCtx.drawImage(tempCanvas, 0, 0);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); // تهيئة مبدئية
+
+        // إظهار رسالة
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.style.opacity = '1';
+            setTimeout(() => toast.style.opacity = '0', 1500);
+        }
+
+        // إخفاء وإظهار الترسانة
+        const toggleBtn = document.getElementById('toggle-toolbar-btn');
+        const toolbar = document.getElementById('toolbar');
+        let isToolbarVisible = true;
+        
+        toggleBtn.addEventListener('click', () => {
+            isToolbarVisible = !isToolbarVisible;
+            toolbar.style.display = isToolbarVisible ? 'flex' : 'none';
+        });
+
+        // نظام الصوت برمجياً (Web Audio API)
+        let audioCtx = null;
+        let whiteNoiseBuffer = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            if (!whiteNoiseBuffer && audioCtx) {
+                const bufferSize = audioCtx.sampleRate * 2; 
+                whiteNoiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const output = whiteNoiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = Math.random() * 2 - 1; // ضوضاء بيضاء للتكسير والانفجارات
+                }
+            }
+        }
+
+        const SoundEngine = {
+            play: function(type) {
+                if (!audioCtx) return;
+                try {
+                    if (type === 'smash') {
+                        this.osc(300, 0.01, 'square', 0.8, 0.1);
+                        this.noise('highpass', 1000, 1.0, 0.2);
+                    } else if (type === 'shoot') {
+                        this.noise('highpass', 800, 0.8, 0.05);
+                    } else if (type === 'burn') {
+                        this.noise('lowpass', 500, 0.5, 0.15);
+                    } else if (type === 'zap') {
+                        this.osc(1200, 200, 'sawtooth', 0.2, 0.1);
+                    } else if (type === 'splat') {
+                        this.osc(600, 50, 'sine', 0.6, 0.1);
+                    } else if (type === 'boom') {
+                        this.osc(150, 10, 'sine', 1.0, 1.2);
+                        this.noise('lowpass', 300, 1.0, 1.0);
+                    } else if (type === 'cut') {
+                        this.osc(80 + Math.random()*20, 80, 'sawtooth', 0.3, 0.1);
+                    } else if (type === 'magic') {
+                        this.osc(800, 400, 'sine', 0.4, 0.4);
+                        this.osc(400, 800, 'triangle', 0.3, 0.4);
+                    } else if (type === 'hiss') {
+                        this.noise('bandpass', 2000, 0.4, 0.3);
+                    } else if (type === 'buzz') {
+                        this.osc(100, 100, 'sawtooth', 0.4, 0.2);
+                    } else if (type === 'thump') {
+                        this.osc(100, 10, 'square', 0.7, 0.15);
+                    }
+                } catch(e) {}
+            },
+            osc: function(freqStart, freqEnd, type, vol, dur) {
+                let osc = audioCtx.createOscillator();
+                let gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freqStart, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(Math.max(freqEnd, 0.01), audioCtx.currentTime + dur);
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + dur);
+            },
+            noise: function(filterType, freq, vol, dur) {
+                let src = audioCtx.createBufferSource();
+                src.buffer = whiteNoiseBuffer;
+                let filter = audioCtx.createBiquadFilter();
+                filter.type = filterType; filter.frequency.value = freq;
+                let gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
+                src.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+                src.start(audioCtx.currentTime); src.stop(audioCtx.currentTime + dur);
+            }
+        };
+
+        // مصفوفة الـ 50 سلاح كاملة
+        const weaponsData = [
+            { id: 1, name: "مطرقة", icon: "🔨", action: "click", vis: "smash", sound: "smash", size: 1, color: "" },
+            { id: 2, name: "رشاش", icon: "🔫", action: "drag", vis: "shoot", sound: "shoot", size: 1, color: "", throttle: 50 },
+            { id: 3, name: "قاذف لهب", icon: "🔥", action: "drag", vis: "burn", sound: "burn", size: 2, color: "", throttle: 30 },
+            { id: 4, name: "ليزر", icon: "☄️", action: "drag", vis: "laser", sound: "zap", size: 1, color: "#00ffff", throttle: 20 },
+            { id: 5, name: "منشار", icon: "🪚", action: "drag", vis: "cut", sound: "cut", size: 2, color: "", throttle: 40 },
+            { id: 6, name: "كرات طلاء", icon: "🎨", action: "drag", vis: "splat", sound: "splat", size: 1, color: "random", throttle: 80 },
+            { id: 7, name: "قنبلة", icon: "💣", action: "click", vis: "boom", sound: "boom", size: 2, color: "" },
+            { id: 8, name: "برق", icon: "⚡", action: "drag", vis: "lightning", sound: "zap", size: 1, color: "", throttle: 150 },
+            { id: 9, name: "حمض", icon: "🧪", action: "drag", vis: "splat", sound: "hiss", size: 0.8, color: "#39ff14", throttle: 60 },
+            { id: 10, name: "ممحاة", icon: "🧽", action: "drag", vis: "erase", sound: "", size: 2, color: "", throttle: 10 },
+            { id: 11, name: "سيف", icon: "🗡️", action: "drag", vis: "slash", sound: "cut", size: 1.5, color: "", throttle: 100 },
+            { id: 12, name: "فأس", icon: "🪓", action: "click", vis: "slash_deep", sound: "smash", size: 2.5, color: "" },
+            { id: 13, name: "مسدس", icon: "🔫", action: "click", vis: "shoot", sound: "shoot", size: 1.5, color: "" },
+            { id: 14, name: "بندقية", icon: "💥", action: "click", vis: "shoot_scatter", sound: "boom", size: 2, color: "" },
+            { id: 15, name: "قناصة", icon: "🎯", action: "click", vis: "shoot_big", sound: "shoot", size: 3, color: "" },
+            { id: 16, name: "ديناميت", icon: "🧨", action: "click", vis: "boom", sound: "boom", size: 1.5, color: "" },
+            { id: 17, name: "بازوكا", icon: "🚀", action: "click", vis: "boom", sound: "boom", size: 3.5, color: "" },
+            { id: 18, name: "سهم", icon: "🏹", action: "click", vis: "pierce", sound: "cut", size: 1, color: "" },
+            { id: 19, name: "نينجا", icon: "🥷", action: "drag", vis: "stamp", sound: "cut", size: 1, color: "ninja", throttle: 150 },
+            { id: 20, name: "ثقب أسود", icon: "🌌", action: "click", vis: "blackhole", sound: "magic", size: 5, color: "" },
+            { id: 21, name: "نيزك", icon: "☄️", action: "click", vis: "crater", sound: "boom", size: 4, color: "" },
+            { id: 22, name: "جليد", icon: "❄️", action: "drag", vis: "freeze", sound: "smash", size: 2, color: "", throttle: 60 },
+            { id: 23, name: "نار", icon: "🔥", action: "drag", vis: "fire_patch", sound: "burn", size: 1.5, color: "", throttle: 40 },
+            { id: 24, name: "ماء", icon: "💧", action: "drag", vis: "splash", sound: "splat", size: 1.5, color: "#4da6ff", throttle: 50 },
+            { id: 25, name: "سم", icon: "☠️", action: "drag", vis: "splat", sound: "hiss", size: 1, color: "#8a2be2", throttle: 70 },
+            { id: 26, name: "سكين", icon: "🔪", action: "drag", vis: "slash_thin", sound: "cut", size: 1, color: "", throttle: 80 },
+            { id: 27, name: "رمح", icon: "🔱", action: "click", vis: "pierce_deep", sound: "cut", size: 2, color: "" },
+            { id: 28, name: "قوس", icon: "🏹", action: "click", vis: "pierce", sound: "cut", size: 1.2, color: "" },
+            { id: 29, name: "قنبلة نووية", icon: "☢️", action: "click", vis: "nuke", sound: "boom", size: 8, color: "" },
+            { id: 30, name: "زلزال", icon: "🌍", action: "click", vis: "quake", sound: "boom", size: 10, color: "" },
+            { id: 31, name: "إعصار", icon: "🌪️", action: "drag", vis: "tornado", sound: "hiss", size: 3, color: "", throttle: 50 },
+            { id: 32, name: "مسمار", icon: "📌", action: "click", vis: "tiny_hole", sound: "thump", size: 1, color: "" },
+            { id: 33, name: "دباسة", icon: "🖇️", action: "click", vis: "staple", sound: "thump", size: 1, color: "" },
+            { id: 34, name: "مثقاب", icon: "🪛", action: "drag", vis: "grind", sound: "buzz", size: 1, color: "", throttle: 30 },
+            { id: 35, name: "مفك", icon: "🔧", action: "drag", vis: "scratch", sound: "cut", size: 1, color: "", throttle: 20 },
+            { id: 36, name: "مفتاح ربط", icon: "🔧", action: "click", vis: "smash", sound: "smash", size: 1.5, color: "" },
+            { id: 37, name: "مضرب", icon: "🏏", action: "click", vis: "smash", sound: "smash", size: 2, color: "" },
+            { id: 38, name: "غاز", icon: "💨", action: "drag", vis: "gas", sound: "hiss", size: 3, color: "#aadd88", throttle: 60 },
+            { id: 39, name: "أشعة", icon: "💀", action: "drag", vis: "laser", sound: "zap", size: 2, color: "#33ff33", throttle: 20 },
+            { id: 40, name: "شبح", icon: "👻", action: "drag", vis: "ghost", sound: "magic", size: 2, color: "", throttle: 100 },
+            { id: 41, name: "عفريت", icon: "👺", action: "click", vis: "stamp", sound: "magic", size: 2.5, color: "goblin" },
+            { id: 42, name: "خفاش", icon: "🦇", action: "drag", vis: "stamp", sound: "cut", size: 1, color: "bat", throttle: 150 },
+            { id: 43, name: "لغم", icon: "🕳️", action: "click", vis: "crater", sound: "boom", size: 2, color: "" },
+            { id: 44, name: "صاروخ", icon: "🚀", action: "drag", vis: "missile", sound: "boom", size: 2, color: "", throttle: 120 },
+            { id: 45, name: "شعاع", icon: "🔦", action: "drag", vis: "laser", sound: "zap", size: 3, color: "#ffffaa", throttle: 20 },
+            { id: 46, name: "نمل", icon: "🐜", action: "drag", vis: "ants", sound: "buzz", size: 1, color: "", throttle: 50 },
+            { id: 47, name: "نحل", icon: "🐝", action: "drag", vis: "bees", sound: "buzz", size: 1, color: "", throttle: 60 },
+            { id: 48, name: "دودة", icon: "🐛", action: "drag", vis: "slime", sound: "splat", size: 1, color: "#88cc44", throttle: 40 },
+            { id: 49, name: "بخاخ", icon: "🧴", action: "drag", vis: "spray", sound: "hiss", size: 2, color: "random", throttle: 20 },
+            { id: 50, name: "ختم", icon: "🪪", action: "click", vis: "stamp", sound: "thump", size: 2, color: "approved" }
+        ];
+
+        let currentWeapon = weaponsData[0];
+        const grid = document.getElementById('weapons-grid');
+        
+        // إنشاء أزرار الأسلحة
+        weaponsData.forEach((w, index) => {
+            const btn = document.createElement('button');
+            btn.className = 'weapon-btn' + (index === 0 ? ' active' : '');
+            btn.innerHTML = `<span>${w.icon}</span> <span>${w.name}</span>`;
+            btn.onclick = () => {
+                document.querySelectorAll('.weapon-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentWeapon = w;
+                showToast(`سلاح: ${w.name}`);
+            };
+            grid.appendChild(btn);
+        });
+
+        const header = document.getElementById('toolbar-header');
+        let isDraggingUI = false;
+        let uiOffsetX = 0, uiOffsetY = 0;
+
+        header.addEventListener('pointerdown', (e) => {
+            isDraggingUI = true;
+            const rect = toolbar.getBoundingClientRect();
+            uiOffsetX = e.clientX - rect.left;
+            uiOffsetY = e.clientY - rect.top;
+            e.stopPropagation();
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (isDraggingUI) {
+                // منع خروج اللوحة عن الشاشة
+                let newX = e.clientX - uiOffsetX;
+                let newY = e.clientY - uiOffsetY;
+                newX = Math.max(0, Math.min(newX, window.innerWidth - toolbar.offsetWidth));
+                newY = Math.max(0, Math.min(newY, window.innerHeight - header.offsetHeight));
+                
+                toolbar.style.left = newX + 'px';
+                toolbar.style.top = newY + 'px';
+            }
+        });
+
+        window.addEventListener('pointerup', () => isDraggingUI = false);
+        toolbar.addEventListener('pointerdown', e => e.stopPropagation()); // منع الرسم عند لمس اللوحة
+        
+        let particles = [];
+        function addParticle(x, y, color, vx, vy, life, size) {
+            particles.push({x, y, color, vx, vy, life, maxLife: life, size});
+        }
+
+        function updateFX() {
+            fxCtx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.3; // جاذبية
+                p.life--;
+                
+                fxCtx.globalAlpha = Math.max(0, p.life / p.maxLife);
+                fxCtx.fillStyle = p.color;
+                fxCtx.beginPath();
+                fxCtx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+                fxCtx.fill();
+                
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+            fxCtx.globalAlpha = 1.0;
+            requestAnimationFrame(updateFX);
+        }
+        updateFX(); // بدء حلقة التأثيرات
+
+        function getRandomColor() {
+            const colors = ['#e11d48', '#2563eb', '#16a34a', '#ca8a04', '#9333ea', '#db2777', '#0891b2', '#ea580c'];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        const DrawEngine = {
+            ctx: damageCtx,
+            smash: function(x, y, scale) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                this.ctx.fillStyle = "rgba(0,0,0,0.8)";
+                this.ctx.beginPath(); this.ctx.arc(x, y, 5*scale, 0, Math.PI*2); this.ctx.fill();
+                
+                this.ctx.strokeStyle = "rgba(255,255,255,0.7)";
+                let lines = 5 + Math.random()*5;
+                for(let i=0; i<lines; i++) {
+                    this.ctx.beginPath();
+                    this.ctx.lineWidth = 1.5;
+                    let angle = (Math.PI*2/lines)*i + Math.random();
+                    let len = (30 + Math.random()*50) * scale;
+                    this.ctx.moveTo(x, y);
+                    let cx=x, cy=y;
+                    for(let j=0; j<4; j++) {
+                        cx += Math.cos(angle)*(len/4);
+                        cy += Math.sin(angle)*(len/4);
+                        angle += (Math.random()-0.5);
+                        this.ctx.lineTo(cx, cy);
+                    }
+                    this.ctx.stroke();
+                }
+                for(let k=0; k<10; k++) addParticle(x, y, '#ffffff', (Math.random()-0.5)*10, Math.random()*-10, 30, 2);
+            },
+            shoot: function(x, y, scale) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                this.ctx.fillStyle = "rgba(30,30,30,0.6)";
+                this.ctx.beginPath(); this.ctx.arc(x, y, 8*scale, 0, Math.PI*2); this.ctx.fill();
+                this.ctx.fillStyle = "#000";
+                this.ctx.beginPath(); this.ctx.arc(x, y, 3*scale, 0, Math.PI*2); this.ctx.fill();
+                this.ctx.strokeStyle = "#fff"; this.ctx.lineWidth = 1;
+                for(let i=0; i<3; i++) {
+                    this.ctx.beginPath(); this.ctx.moveTo(x, y);
+                    let a = Math.random()*Math.PI*2;
+                    this.ctx.lineTo(x + Math.cos(a)*15*scale, y + Math.sin(a)*15*scale);
+                    this.ctx.stroke();
+                }
+                for(let k=0; k<5; k++) addParticle(x, y, '#666', (Math.random()-0.5)*5, Math.random()*-5, 20, 2);
+            },
+            shoot_scatter: function(x, y, scale) {
+                for(let i=0; i<5; i++) {
+                    this.shoot(x + (Math.random()-0.5)*50*scale, y + (Math.random()-0.5)*50*scale, scale*0.5);
+                }
+            },
+            shoot_big: function(x, y, scale) {
+                this.shoot(x, y, scale);
+                this.smash(x, y, scale*0.5);
+            },
+            burn: function(x, y, scale) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                this.ctx.shadowBlur = 10; this.ctx.shadowColor = "red";
+                this.ctx.fillStyle = `rgba(20,20,20,${Math.random()*0.4 + 0.1})`;
+                this.ctx.beginPath(); this.ctx.arc(x, y, 25*scale, 0, Math.PI*2); this.ctx.fill();
+                
+                const c = ['rgba(255,0,0,0.7)', 'rgba(255,120,0,0.8)'];
+                for(let i=0; i<3; i++) {
+                    this.ctx.fillStyle = c[Math.floor(Math.random()*c.length)];
+                    this.ctx.beginPath(); this.ctx.arc(x+(Math.random()-0.5)*20*scale, y+(Math.random()-0.5)*20*scale, 10*scale, 0, Math.PI*2); this.ctx.fill();
+                }
+                this.ctx.shadowBlur = 0;
+                addParticle(x, y, '#ff4400', (Math.random()-0.5)*2, Math.random()*-3 - 2, 40, 4*scale);
+            },
+            fire_patch: function(x, y, scale) { this.burn(x, y, scale); },
+            laser: function(x1, y1, x2, y2, color, scale) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                this.ctx.lineCap = 'round';
+                this.ctx.shadowBlur = 15; this.ctx.shadowColor = color;
+                this.ctx.strokeStyle = color; this.ctx.lineWidth = 12 * scale;
+                this.ctx.beginPath(); this.ctx.moveTo(x1, y1); this.ctx.lineTo(x2, y2); this.ctx.stroke();
+                
+                this.ctx.shadowBlur = 0;
+                this.ctx.strokeStyle = "#fff"; this.ctx.lineWidth = 4 * scale;
+                this.ctx.beginPath(); this.ctx.moveTo(x1, y1); this.ctx.lineTo(x2, y2); this.ctx.stroke();
+                addParticle(x2, y2, color, (Math.random()-0.5)*8, (Math.random()-0.5)*8, 15, 3);
+            },
+            cut: function(x1, y1, x2, y2, scale) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                this.ctx.strokeStyle = "#111"; this.ctx.lineWidth = 6 * scale;
+                this.ctx.lineCap = 'butt';
+                this.ctx.beginPath(); this.ctx.moveTo(x1, y1); this.ctx.lineTo(x2, y2); this.ctx.stroke();
+                if(Math.random()>0.5) addParticle(x2, y2, '#ffaa00', (Math.random()-0.5)*10, Math.random()*-10, 10, 2);
+            },
+            slash: function(x1, y1, x2, y2, scale) {
+                this.ctx.strokeStyle = "#000"; this.ctx.lineWidth = 3 * scale;
+                this.ctx.beginPath(); this.ctx.moveTo(x1, y1); this.ctx.lineTo(x2, y2); this.ctx.stroke();
+            },
+            slash_thin: function(x1, y1, x2, y2, scale) {
+                this.ctx.strokeStyle = "#222"; this.ctx.lineWidth = 1 * scale;
+                this.ctx.beginPath(); this.ctx.moveTo(x1, y1); this.ctx.lineTo(x2, y2); this.ctx.stroke();
+            },
+            slash_deep: function(x, y, scale) {
+                this.ctx.strokeStyle = "#000"; this.ctx.lineWidth = 8 * scale;
+                this.ctx.beginPath(); this.ctx.moveTo(x-30*scale, y-30*scale); this.ctx.lineTo(x+30*scale, y+30*scale); this.ctx.stroke();
+                this.smash(x, y, scale*0.5);
+            },
+            splat: function(x, y, scale, color) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                const c = color === 'random' ? getRandomColor() : color;
+                this.ctx.fillStyle = c;
+                this.ctx.beginPath(); this.ctx.arc(x, y, 15*scale, 0, Math.PI*2); this.ctx.fill();
+                for(let i=0; i<6; i++) {
+                    let a = Math.random()*Math.PI*2;
+                    let d = 20*scale + Math.random()*30*scale;
+                    this.ctx.beginPath(); this.ctx.arc(x+Math.cos(a)*d, y+Math.sin(a)*d, Math.random()*5*scale+1, 0, Math.PI*2); this.ctx.fill();
+                }
+            },
+            splash: function(x, y, scale, color) { this.splat(x, y, scale, color); },
+            boom: function(x, y, scale) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                this.ctx.fillStyle = "rgba(10,10,10,0.95)";
+                this.ctx.beginPath(); this.ctx.arc(x, y, 50*scale, 0, Math.PI*2); this.ctx.fill();
+                this.ctx.fillStyle = "rgba(50,20,0,0.7)";
+                for(let i=0; i<5; i++) {
+                    this.ctx.beginPath(); this.ctx.arc(x+(Math.random()-0.5)*80*scale, y+(Math.random()-0.5)*80*scale, 30*scale, 0, Math.PI*2); this.ctx.fill();
+                }
+                for(let i=0; i<20; i++) addParticle(x, y, '#ff5500', (Math.random()-0.5)*20, (Math.random()-0.5)*20, 40, 5*scale);
+            },
+            crater: function(x, y, scale) {
+                this.boom(x, y, scale);
+                this.smash(x, y, scale*2);
+            },
+            nuke: function(x, y, scale) {
+                this.boom(x, y, scale*3);
+                this.ctx.fillStyle = "rgba(255,255,255,0.5)";
+                this.ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT); // Flash
+                setTimeout(() => {
+                    this.ctx.globalCompositeOperation = 'destination-out';
+                    this.ctx.fillStyle = "rgba(255,255,255,0.1)"; // fade effect
+                    this.ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);
+                    this.ctx.globalCompositeOperation = 'source-over';
+                }, 50);
+            },
+            lightning: function(x, y, scale) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                this.ctx.shadowBlur = 10; this.ctx.shadowColor = "#88ccff";
+                for(let b=0; b<2; b++) {
+                    this.ctx.beginPath(); this.ctx.moveTo(x, y);
+                    let cx=x, cy=y, a=Math.random()*Math.PI*2;
+                    this.ctx.strokeStyle = "#fff"; this.ctx.lineWidth = 2*scale;
+                    for(let s=0; s<10; s++) {
+                        a += (Math.random()-0.5)*1.5;
+                        cx += Math.cos(a)*30*scale; cy += Math.sin(a)*30*scale;
+                        this.ctx.lineTo(cx, cy);
+                    }
+                    this.ctx.stroke();
+                }
+                this.ctx.shadowBlur = 0;
+            },
+            erase: function(x1, y1, x2, y2, scale) {
+                this.ctx.globalCompositeOperation = 'destination-out';
+                this.ctx.lineWidth = 50 * scale;
+                this.ctx.lineCap = 'round';
+                this.ctx.beginPath(); this.ctx.moveTo(x1, y1); this.ctx.lineTo(x2, y2); this.ctx.stroke();
+                this.ctx.globalCompositeOperation = 'source-over'; 
+            },
+            stamp: function(x, y, scale, type) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                this.ctx.font = `${40*scale}px Arial`;
+                this.ctx.textAlign = 'center'; this.ctx.textBaseline = 'middle';
+                let emoji = "❌";
+                if(type === 'ninja') emoji = "🥷";
+                if(type === 'goblin') emoji = "👺";
+                if(type === 'bat') emoji = "🦇";
+                if(type === 'approved') emoji = "✅";
+                this.ctx.fillText(emoji, x, y);
+            },
+            blackhole: function(x, y, scale) {
+                this.ctx.globalCompositeOperation = 'source-over';
+                this.ctx.shadowBlur = 30; this.ctx.shadowColor = "#8a2be2";
+                this.ctx.fillStyle = "#000";
+                this.ctx.beginPath(); this.ctx.arc(x, y, 60*scale, 0, Math.PI*2); this.ctx.fill();
+                this.ctx.shadowBlur = 0;
+                for(let i=0; i<10; i++) {
+                    this.ctx.strokeStyle = `rgba(138,43,226, ${Math.random()})`;
+                    this.ctx.beginPath(); this.ctx.arc(x, y, 60*scale + Math.random()*40, 0, Math.PI*2); this.ctx.stroke();
+                }
+            },
+            freeze: function(x, y, scale) {
+                this.ctx.fillStyle = `rgba(200, 240, 255, 0.6)`;
+                this.ctx.beginPath();
+                for(let i=0; i<6; i++) {
+                    let a = (Math.PI*2/6)*i;
+                    let d = 30*scale;
+                    this.ctx.lineTo(x+Math.cos(a)*d, y+Math.sin(a)*d);
+                }
+                this.ctx.fill();
+            },
+            pierce: function(x, y, scale) {
+                this.ctx.fillStyle = "#000";
+                this.ctx.beginPath(); this.ctx.arc(x, y, 3*scale, 0, Math.PI*2); this.ctx.fill();
+                this.ctx.strokeStyle = "#fff"; this.ctx.lineWidth = 1;
+                this.ctx.beginPath(); this.ctx.moveTo(x-10*scale, y-10*scale); this.ctx.lineTo(x+10*scale, y+10*scale); this.ctx.stroke();
+            },
+            pierce_deep: function(x, y, scale) { this.pierce(x, y, scale*2); this.smash(x, y, scale*0.5); },
+            quake: function(x, y, scale) {
+                this.smash(x, y, scale*3);
+                damageCanvas.style.transform = `translate(${Math.random()*10-5}px, ${Math.random()*10-5}px)`;
+                setTimeout(() => damageCanvas.style.transform = `translate(0, 0)`, 50);
+            },
+            tornado: function(x, y, scale) {
+                this.ctx.strokeStyle = `rgba(150,150,150,0.5)`;
+                this.ctx.lineWidth = 2*scale;
+                this.ctx.beginPath();
+                for(let i=0; i<20; i++) {
+                    this.ctx.arc(x, y - i*5*scale, 10*scale + i*2, 0, Math.PI);
+                }
+                this.ctx.stroke();
+            },
+            tiny_hole: function(x, y, scale) {
+                this.ctx.fillStyle = "#000"; this.ctx.beginPath(); this.ctx.arc(x, y, 2*scale, 0, Math.PI*2); this.ctx.fill();
+            },
+            staple: function(x, y, scale) {
+                this.ctx.strokeStyle = "#ccc"; this.ctx.lineWidth = 3*scale;
+                this.ctx.beginPath(); this.ctx.moveTo(x-15*scale, y); this.ctx.lineTo(x+15*scale, y); this.ctx.stroke();
+                this.ctx.fillStyle="#000"; this.ctx.fillRect(x-16*scale, y-2, 2, 4); this.ctx.fillRect(x+14*scale, y-2, 2, 4);
+            },
+            grind: function(x, y, scale) { this.ctx.fillStyle="#333"; this.ctx.fillRect(x-5*scale, y-5*scale, 10*scale, 10*scale); },
+            scratch: function(x1, y1, x2, y2, scale) {
+                this.ctx.strokeStyle = "rgba(255,255,255,0.8)"; this.ctx.lineWidth = 1;
+                this.ctx.beginPath(); this.ctx.moveTo(x1, y1); this.ctx.lineTo(x2, y2); this.ctx.stroke();
+            },
+            gas: function(x, y, scale, color) {
+                this.ctx.fillStyle = `rgba(170, 221, 136, 0.1)`;
+                this.ctx.beginPath(); this.ctx.arc(x, y, 40*scale, 0, Math.PI*2); this.ctx.fill();
+            },
+            ghost: function(x, y, scale) {
+                this.ctx.fillStyle = `rgba(255, 255, 255, 0.15)`;
+                this.ctx.beginPath(); this.ctx.arc(x, y, 20*scale, 0, Math.PI*2); this.ctx.fill();
+            },
+            missile: function(x, y, scale) {
+                this.boom(x, y, scale);
+            },
+            ants: function(x, y, scale) {
+                this.ctx.fillStyle = "#000";
+                for(let i=0; i<3; i++) {
+                    this.ctx.beginPath(); this.ctx.arc(x+(Math.random()-0.5)*30*scale, y+(Math.random()-0.5)*30*scale, 1.5, 0, Math.PI*2); this.ctx.fill();
+                }
+            },
+            bees: function(x, y, scale) {
+                this.ctx.fillStyle = "#ddaa00";
+                for(let i=0; i<2; i++) {
+                    let bx = x+(Math.random()-0.5)*40*scale; let by = y+(Math.random()-0.5)*40*scale;
+                    this.ctx.beginPath(); this.ctx.arc(bx, by, 3, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.fillStyle="#000"; this.ctx.fillRect(bx-1, by-1, 2, 2);
+                }
+            },
+            slime: function(x, y, scale, color) {
+                this.ctx.fillStyle = color;
+                this.ctx.beginPath(); this.ctx.arc(x, y, 8*scale, 0, Math.PI*2); this.ctx.fill();
+            },
+            spray: function(x, y, scale, color) {
+                const c = color === 'random' ? getRandomColor() : color;
+                this.ctx.fillStyle = c;
+                for(let i=0; i<15; i++) {
+                    this.ctx.beginPath(); this.ctx.arc(x+(Math.random()-0.5)*50*scale, y+(Math.random()-0.5)*50*scale, Math.random()*2, 0, Math.PI*2); this.ctx.fill();
+                }
+            }
+        };
+
+        let isPointerDown = false;
+        let lastX = 0;
+        let lastY = 0;
+        let lastActionTime = 0;
+
+        function triggerWeapon(x, y, isClick) {
+            initAudio(); // تفعيل الصوت عند أول تفاعل
+            const w = currentWeapon;
+            const now = Date.now();
+            let shouldFire = false;
+
+            if (isClick && w.action === 'click') {
+                shouldFire = true;
+            } else if (!isClick && w.action === 'drag') {
+                let dist = Math.hypot(x - lastX, y - lastY);
+                if (now - lastActionTime > (w.throttle || 50) || dist > 30) {
+                    shouldFire = true;
+                }
+            }
+
+            if (shouldFire) {
+                if (DrawEngine[w.vis]) {
+                    if (['laser', 'cut', 'slash', 'slash_thin', 'scratch', 'erase'].includes(w.vis)) {
+                        DrawEngine[w.vis](lastX || x, lastY || y, x, y, w.size, w.color);
+                    } else if (['splat', 'splash', 'gas', 'slime', 'spray'].includes(w.vis)) {
+                        DrawEngine[w.vis](x, y, w.size, w.color);
+                    } else if (w.vis === 'stamp') {
+                        DrawEngine[w.vis](x, y, w.size, w.color);
+                    } else {
+                        DrawEngine[w.vis](x, y, w.size);
+                    }
+                }
+                SoundEngine.play(w.sound);
+                lastActionTime = now;
+            }
+        }
+
+        // التعامل مع الأحداث (Pointer Events) لتشمل الماوس واللمس
+        gameContainer.addEventListener('pointerdown', (e) => {
+            // تجاهل الحدث إذا تم الضغط على قائمة الأدوات
+            if(e.target.closest('#toolbar') || e.target.closest('#toggle-toolbar-btn')) return; 
+            isPointerDown = true;
+            lastX = e.clientX; 
+            lastY = e.clientY;
+            triggerWeapon(e.clientX, e.clientY, true);
+        });
+
+        gameContainer.addEventListener('pointermove', (e) => {
+            if (!isPointerDown) return;
+            triggerWeapon(e.clientX, e.clientY, false);
+            lastX = e.clientX; 
+            lastY = e.clientY;
+        });
+
+        window.addEventListener('pointerup', () => {
+            isPointerDown = false;
+        });
+
+        const bgInput = document.getElementById('file-input');
+        
+        document.getElementById('btn-bg').addEventListener('click', () => {
+            bgInput.click();
+        });
+
+        bgInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    // تعيين الصورة كخلفية، وإجبارها على أن تملأ الشاشة (cover)
+                    gameContainer.style.backgroundImage = `url('${event.target.result}')`;
+                    // هذه الخصائص تضمن عدم وجود حواف سوداء وتكيفها مع شاشة الموبايل
+                    gameContainer.style.backgroundSize = 'cover';
+                    gameContainer.style.backgroundPosition = 'center';
+                    gameContainer.style.backgroundRepeat = 'no-repeat';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // تنظيف الشاشة
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            damageCtx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        });
+
+    </script>
+</body>
+</html>
